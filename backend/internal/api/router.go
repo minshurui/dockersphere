@@ -1,6 +1,8 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/minshurui/dockersphere/internal/audit"
@@ -62,6 +64,12 @@ func SetupRouter(
 			v1.GET("/audit", auditHandler.List)
 		}
 	}
+
+	// Serve built frontend SPA
+	r.Static("/assets", "../frontend/dist/assets")
+	r.NoRoute(func(c *gin.Context) {
+		http.ServeFile(c.Writer, c.Request, "../frontend/dist/index.html")
+	})
 
 	return r
 }
