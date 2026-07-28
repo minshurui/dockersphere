@@ -22,6 +22,9 @@ func SetupRouter(
 	gin.SetMode(mode)
 	r := gin.New()
 
+	// Trust only local networks
+	_ = r.SetTrustedProxies([]string{"127.0.0.0/8", "::1", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"})
+
 	// Global middleware
 	r.Use(middleware.Recovery())
 	r.Use(middleware.RequestID())
@@ -31,8 +34,13 @@ func SetupRouter(
 	r.GET("/health/live", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 	r.GET("/health/ready", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
 
-	// WebSocket
+	// WebSocket (with optional token auth via query param)
 	r.GET("/ws", func(c *gin.Context) {
+		token := c.Query("token")
+		if token != "" && token != "dockersphere" {
+			c.JSON(401, gin.H{"code": 401, "message": "unauthorized"})
+			return
+		}
 		hub.ServeWS(c.Writer, c.Request)
 	})
 
@@ -43,6 +51,7 @@ func SetupRouter(
 		taskHandler := NewTaskHandler(taskSvc)
 
 		v1.GET("/containers", containerHandler.List)
+		v1.GET("/containers/:id/stats", containerHandler.Stats)
 		v1.POST("/containers/:id/action", containerHandler.Action)
 
 		v1.GET("/tasks", taskHandler.List)

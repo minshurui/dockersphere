@@ -26,10 +26,11 @@ func NewEventListener(cli *dockerclient.Client, bus *event.Bus) *EventListener {
 
 // Start begins listening for Docker events. It blocks until ctx is cancelled.
 func (l *EventListener) Start(ctx context.Context) {
+	const maxRetries = 10
 	f := filters.NewArgs()
 	f.Add("type", "container")
 
-	for {
+	for retry := 0; retry < maxRetries; retry++ {
 		eventCh, errCh := l.cli.Events(ctx, types.EventsOptions{Filters: f})
 
 	inner:
@@ -50,7 +51,7 @@ func (l *EventListener) Start(ctx context.Context) {
 				if ctx.Err() != nil {
 					return
 				}
-				log.Printf("[EventListener] error: %v, reconnecting...", err)
+				log.Printf("[EventListener] error: %v, reconnecting (retry %d/%d)...", err, retry+1, maxRetries)
 				break inner
 			}
 		}
@@ -63,6 +64,7 @@ func (l *EventListener) Start(ctx context.Context) {
 			time.Sleep(3 * time.Second)
 		}
 	}
+	log.Println("[EventListener] max retries reached, giving up")
 }
 
 func (l *EventListener) handleEvent(e events.Message) {

@@ -34,6 +34,11 @@ type App struct {
 func New(cfg *config.Config) (*App, error) {
 	app := &App{cfg: cfg}
 
+	// Ensure data directory exists before DB initialization
+	if err := os.MkdirAll("data", 0755); err != nil {
+		return nil, fmt.Errorf("create data dir: %w", err)
+	}
+
 	// Docker client
 	cli, err := docker.NewClient(cfg.Docker.Host)
 	if err != nil {
@@ -109,9 +114,6 @@ func (a *App) Run() error {
 		a.hub,
 		a.auditStore,
 	)
-
-	// Ensure data directory exists
-	_ = os.MkdirAll("data", 0755)
 
 	// Start HTTP server
 	addr := fmt.Sprintf(":%d", a.cfg.Server.Port)

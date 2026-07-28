@@ -2,16 +2,44 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 
 	dockerclient "github.com/docker/docker/client"
 	"github.com/minshurui/dockersphere/internal/model"
 )
+
+func toContainer(c types.Container) model.Container {
+	name := ""
+	if len(c.Names) > 0 {
+		name = strings.TrimPrefix(c.Names[0], "/")
+	}
+	ports := make([]model.ContainerPort, 0, len(c.Ports))
+	for _, p := range c.Ports {
+		ports = append(ports, model.ContainerPort{
+			PrivatePort: p.PrivatePort,
+			PublicPort:  p.PublicPort,
+			Type:        p.Type,
+			IP:          p.IP,
+		})
+	}
+	return model.Container{
+		ID:      c.ID[:12],
+		Name:    name,
+		Image:   c.Image,
+		State:   c.State,
+		Status:  c.Status,
+		Created: time.Unix(c.Created, 0),
+		Ports:   ports,
+		Labels:  c.Labels,
+	}
+}
 
 type containerService struct {
 	cli *dockerclient.Client
@@ -34,31 +62,38 @@ func (s *containerService) List(ctx context.Context) ([]model.Container, error) 
 
 	result := make([]model.Container, 0, len(containers))
 	for _, c := range containers {
-		name := ""
-		if len(c.Names) > 0 {
-			name = strings.TrimPrefix(c.Names[0], "/")
-		}
-		ports := make([]model.ContainerPort, 0, len(c.Ports))
-		for _, p := range c.Ports {
-			ports = append(ports, model.ContainerPort{
-				PrivatePort: p.PrivatePort,
-				PublicPort:  p.PublicPort,
-				Type:        p.Type,
-				IP:          p.IP,
-			})
-		}
-		result = append(result, model.Container{
-			ID:      c.ID[:12],
-			Name:    name,
-			Image:   c.Image,
-			State:   c.State,
-			Status:  c.Status,
-			Created: time.Unix(c.Created, 0),
-			Ports:   ports,
-			Labels:  c.Labels,
-		})
+		result = append(result, toContainer(c))
 	}
 	return result, nil
+}
+
+func (s *containerService) Inspect(ctx context.Context, id string) (*model.Container, error) {
+	list, err := s.cli.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	for _, c := range list {
+		name := strings.TrimPrefix(c.Names[0], "/")
+		if name == id || c.ID == id || strings.HasPrefix(c.ID, id) {
+			result := toContainer(c)
+			return &result, nil
+		}
+	}
+	return nil, fmt.Errorf("container %s not found", id)
+}
+
+func (s *containerService) Stats(ctx context.Context, id string) (*model.ContainerStats, error) {
+	resp, err := s.cli.ContainerStats(ctx, id, false)
+	if err != nil {
+		return nil, fmt.Errorf("container stats: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var v *model.ContainerStats
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		return nil, fmt.Errorf("decode stats: %w", err)
+	}
+	return v, nil
 }
 
 func (s *containerService) Start(ctx context.Context, id string) error {

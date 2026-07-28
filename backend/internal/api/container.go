@@ -44,6 +44,17 @@ func (h *ContainerHandler) List(c *gin.Context) {
 	model.OK(c, containers)
 }
 
+// Stats returns real-time CPU/memory stats for a container.
+func (h *ContainerHandler) Stats(c *gin.Context) {
+	id := c.Param("id")
+	stats, err := h.service.Stats(c.Request.Context(), id)
+	if err != nil {
+		model.NotFound(c, "container not found: "+id)
+		return
+	}
+	model.OK(c, stats)
+}
+
 // Action performs an async action on a container.
 func (h *ContainerHandler) Action(c *gin.Context) {
 	id := c.Param("id")
@@ -54,6 +65,13 @@ func (h *ContainerHandler) Action(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+
+	// Verify container exists before submitting the task
+	if _, err := h.service.Inspect(ctx, id); err != nil {
+		model.NotFound(c, "container not found: "+id)
+		return
+	}
+
 	taskID, err := h.taskSvc.Submit(ctx, req.Action, id)
 	if err != nil {
 		model.InternalError(c, err.Error())
