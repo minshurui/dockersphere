@@ -71,33 +71,57 @@
 
         <!-- Containers -->
         <div v-if="activeTab === 'containers'" class="tab-content">
+          <!-- New Deploy -->
+          <div class="section deploy-section">
+            <div class="section-title-row">
+              <h3 class="section-title" @click="showDeploy = !showDeploy" style="cursor:pointer">
+                {{ showDeploy ? '▼' : '▶' }} 新建部署
+              </h3>
+              <span class="compose-count">粘贴 docker-compose.yml 直接启动</span>
+            </div>
+            <div v-if="showDeploy">
+              <div class="deploy-form">
+                <input v-model="deployProject" placeholder="项目名称 (例如: myapp)" class="search-input" style="width:300px;margin-bottom:0.5rem" />
+                <textarea v-model="deployContent" placeholder="粘贴 docker-compose.yml 内容..." class="compose-editor" rows="8"></textarea>
+                <div class="deploy-actions">
+                  <button @click="deployStack" :disabled="deploying" class="btn btn-exec">
+                    {{ deploying ? '部署中...' : '🚀 部署' }}
+                  </button>
+                </div>
+              </div>
+              <div v-if="deployOutput" :class="['deploy-output', deploySuccess ? 'deploy-ok' : 'deploy-fail']">
+                <pre>{{ deployOutput }}</pre>
+              </div>
+            </div>
+          </div>
+
           <div v-if="loading" class="loading">加载中...</div>
           <div v-else-if="filteredContainers.length === 0" class="empty-state">没有匹配的容器</div>
           <div v-else class="container-groups">
             <div v-for="group in filteredGroups" :key="group.project" class="compose-group">
               <div class="compose-header" @click="toggleCompose(group)">
-                <span :class="['compose-arrow', { expanded: group._expanded }]">▶</span>
+                <span :class="['compose-arrow', { expanded: composeExpanded[group.project] }]">▶</span>
                 <span class="compose-icon">▦</span>
                 <span class="compose-name">{{ group.project }}</span>
                 <span class="compose-count">{{ group.containers.length }} 服务</span>
                 <span class="compose-file">{{ group.configFiles ? group.configFiles.split('/').pop() : '' }}</span>
-                <button v-if="group.configFiles && group._expanded" @click.stop="editCompose(group)" class="btn-compose">编辑</button>
+                <button v-if="group.configFiles && composeExpanded[group.project] && group._content" @click.stop="editCompose(group)" class="btn-compose">编辑</button>
               </div>
-              <div v-if="group._expanded && group._content !== undefined" class="compose-inline">
+              <div v-if="composeExpanded[group.project] && group._content !== undefined" class="compose-inline">
                 <div class="compose-inline-header">
                   <span class="compose-inline-title">docker-compose.yml</span>
                   <div class="compose-inline-actions">
-                    <button v-if="!group._editing" @click.stop="editCompose(group)" class="btn btn-log" style="padding:0.2rem 0.5rem;font-size:0.75rem">编辑</button>
-                    <template v-if="group._editing">
+                    <button v-if="composeEditingKey !== group.project" @click.stop="editCompose(group)" class="btn btn-log" style="padding:0.2rem 0.5rem;font-size:0.75rem">编辑</button>
+                    <template v-if="composeEditingKey === group.project">
                       <button @click.stop="saveCompose(group)" class="btn btn-exec" style="padding:0.2rem 0.5rem;font-size:0.75rem">保存</button>
-                      <button @click.stop="cancelCompose(group)" class="btn btn-stop" style="padding:0.2rem 0.5rem;font-size:0.75rem">取消</button>
+                      <button @click.stop="cancelCompose()" class="btn btn-stop" style="padding:0.2rem 0.5rem;font-size:0.75rem">取消</button>
                     </template>
                   </div>
                 </div>
-                <textarea v-if="group._editing" v-model="group._editContent" class="compose-editor" rows="15" @click.stop></textarea>
+                <textarea v-if="composeEditingKey === group.project" v-model="composeEditContent" class="compose-editor" rows="15" @click.stop></textarea>
                 <pre v-else class="compose-viewer">{{ group._content }}</pre>
               </div>
-              <div v-if="group._expanded && group._content === undefined" class="compose-loading">加载中...</div>
+              <div v-if="composeExpanded[group.project] && group._content === undefined" class="compose-loading">加载中...</div>
               <div class="compose-containers">
                 <ContainerCard v-for="c in group.containers" :key="c.id" :container="c" @action="action" @click="openDetail(c)" />
               </div>
@@ -237,6 +261,8 @@ export default {
       showLogs: false, logs: [], execCmd: '', execOutput: '',
       sysInfo: null, imageRemoving: null,
       composeFile: '', composeFilePath: '', composeEditing: false, composeSaving: false,
+      composeEditingKey: '', composeEditContent: '',
+      showDeploy: false, deployProject: '', deployContent: '', deployOutput: '', deploying: false, deploySuccess: false,
       composeExpanded: {},
       tabs: [
         { id: 'dashboard', label: '仪表盘', icon: '◉' },
@@ -303,23 +329,43 @@ export default {
       try { const r = await axios.get('/api/v1/system/info'); if (r.data.code === 0) this.sysInfo = r.data.data
       } catch (e) { /* ignore */ }
     },
-    async toggleCompose(group) {
-      group._expanded = !group._expanded
-      if (group._expanded && group._content === undefined && group.configFiles) {
-        try {
-          const r = await axios.get('/api/v1/compose/file', { params: { path: group.configFiles } })
-          group._content = r.data.code === 0 ? r.data.data : '加载失败'
-        } catch (e) { group._content = '加载失败' }
+    toggleCompose(project) {
+      const key = project.project
+      this.composeExpanded[key] = !this.composeExpanded[key]
+      if (this.composeExpanded[key] && !project._content && project.configFiles) {
+        axios.get('/api/v1/compose/file', { params: { path: project.configFiles } }).then(r => {
+          project._content = r.data.code === 0 ? r.data.data : '加载失败'
+        }).catch(() => { project._content = '加载失败' })
       }
     },
-    editCompose(group) { group._editing = true; group._editContent = group._content },
-    cancelCompose(group) { group._editing = false },
+    editCompose(group) {
+      const key = group.project
+      this.composeEditingKey = key
+      this.composeEditContent = group._content
+    },
+    cancelCompose() { this.composeEditingKey = '' },
     async saveCompose(group) {
       try {
-        await axios.put('/api/v1/compose/file', { path: group.configFiles, content: group._editContent })
-        group._content = group._editContent
-        group._editing = false
+        await axios.put('/api/v1/compose/file', { path: group.configFiles, content: this.composeEditContent })
+        group._content = this.composeEditContent
+        this.composeEditingKey = ''
       } catch (e) { alert('保存失败: ' + (e.response?.data?.message || e.message)) }
+    },
+    async deployStack() {
+      if (!this.deployProject.trim() || !this.deployContent.trim()) { alert('请输入项目名称和内容'); return }
+      this.deploying = true; this.deployOutput = ''; this.deploySuccess = false
+      try {
+        const r = await axios.post('/api/v1/compose/deploy', { project: this.deployProject, content: this.deployContent })
+        if (r.data.code === 0) {
+          this.deployOutput = r.data.data.output
+          this.deploySuccess = r.data.data.success
+          if (this.deploySuccess) { this.fetchContainers(); this.deployProject = ''; this.deployContent = '' }
+        }
+      } catch (e) {
+        this.deployOutput = '请求失败: ' + (e.response?.data?.message || e.message)
+        this.deploySuccess = false
+      }
+      this.deploying = false
     },
     async removeImage(id) {
       this.imageRemoving = id
@@ -538,6 +584,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .compose-loading { text-align: center; padding: 1rem; color: var(--muted); font-size: 0.8rem; }
 .compose-editor { width: 100%; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82rem; background: var(--log-bg); color: var(--log-text); border: none; padding: 0.75rem; resize: vertical; outline: none; line-height: 1.5; }
 .compose-viewer { margin: 0; padding: 0.75rem; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-word; background: var(--log-bg); color: var(--log-text); }
+.deploy-section { border-left: 3px solid var(--primary); }
+.deploy-form { display: flex; flex-direction: column; gap: 0.5rem; }
+.deploy-form .compose-editor { min-height: 150px; }
+.deploy-actions { display: flex; gap: 0.5rem; }
+.deploy-output { margin-top: 0.5rem; border-radius: 6px; padding: 0.75rem; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.4; max-height: 300px; overflow-y: auto; }
+.deploy-output pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+.deploy-ok { background: #1a1a2e; color: #4caf50; border: 1px solid #2e7d32; }
+.deploy-fail { background: #1a1a2e; color: #f44336; border: 1px solid #c62828; }
 .compose-editor-actions { display: flex; gap: 0.5rem; }
 .compose-editor { width: 100%; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; background: var(--log-bg); color: var(--log-text); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; resize: vertical; outline: none; line-height: 1.5; }
 .compose-editor:focus { border-color: var(--primary); }
