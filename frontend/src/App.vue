@@ -75,13 +75,29 @@
           <div v-else-if="filteredContainers.length === 0" class="empty-state">没有匹配的容器</div>
           <div v-else class="container-groups">
             <div v-for="group in filteredGroups" :key="group.project" class="compose-group">
-              <div class="compose-header">
+              <div class="compose-header" @click="toggleCompose(group)">
+                <span :class="['compose-arrow', { expanded: group._expanded }]">▶</span>
                 <span class="compose-icon">▦</span>
                 <span class="compose-name">{{ group.project }}</span>
                 <span class="compose-count">{{ group.containers.length }} 服务</span>
                 <span class="compose-file">{{ group.configFiles ? group.configFiles.split('/').pop() : '' }}</span>
-                <button v-if="group.configFiles" @click.stop="openCompose(group.configFiles)" class="btn-compose">📄 编辑</button>
+                <button v-if="group.configFiles && group._expanded" @click.stop="editCompose(group)" class="btn-compose">编辑</button>
               </div>
+              <div v-if="group._expanded && group._content !== undefined" class="compose-inline">
+                <div class="compose-inline-header">
+                  <span class="compose-inline-title">docker-compose.yml</span>
+                  <div class="compose-inline-actions">
+                    <button v-if="!group._editing" @click.stop="editCompose(group)" class="btn btn-log" style="padding:0.2rem 0.5rem;font-size:0.75rem">编辑</button>
+                    <template v-if="group._editing">
+                      <button @click.stop="saveCompose(group)" class="btn btn-exec" style="padding:0.2rem 0.5rem;font-size:0.75rem">保存</button>
+                      <button @click.stop="cancelCompose(group)" class="btn btn-stop" style="padding:0.2rem 0.5rem;font-size:0.75rem">取消</button>
+                    </template>
+                  </div>
+                </div>
+                <textarea v-if="group._editing" v-model="group._editContent" class="compose-editor" rows="15" @click.stop></textarea>
+                <pre v-else class="compose-viewer">{{ group._content }}</pre>
+              </div>
+              <div v-if="group._expanded && group._content === undefined" class="compose-loading">加载中...</div>
               <div class="compose-containers">
                 <ContainerCard v-for="c in group.containers" :key="c.id" :container="c" @action="action" @click="openDetail(c)" />
               </div>
@@ -184,26 +200,6 @@
           </div>
         </div>
 
-        <!-- Compose Editor -->
-        <div v-if="activeTab === 'compose'" class="tab-content">
-          <button class="btn-back" @click="activeTab = 'containers'">← 返回</button>
-          <div class="section">
-            <div class="section-title-row">
-              <h3 class="section-title">{{ composeFilePath.split('/').pop() || 'docker-compose.yml' }}</h3>
-              <div class="compose-editor-actions">
-                <button @click="composeEditing = !composeEditing" class="btn" :class="composeEditing ? 'btn-stop' : 'btn-start'">
-                  {{ composeEditing ? '取消编辑' : '编辑' }}
-                </button>
-                <button v-if="composeEditing" @click="saveCompose" :disabled="composeSaving" class="btn btn-exec">
-                  {{ composeSaving ? '保存中...' : '💾 保存' }}
-                </button>
-              </div>
-            </div>
-            <textarea v-if="composeEditing" v-model="composeFile" class="compose-editor" rows="30"></textarea>
-            <pre v-else class="compose-viewer">{{ composeFile || '加载中...' }}</pre>
-          </div>
-        </div>
-
         <!-- Events -->
         <div v-if="activeTab === 'events'" class="tab-content">
           <div class="section">
@@ -241,6 +237,7 @@ export default {
       showLogs: false, logs: [], execCmd: '', execOutput: '',
       sysInfo: null, imageRemoving: null,
       composeFile: '', composeFilePath: '', composeEditing: false, composeSaving: false,
+      composeExpanded: {},
       tabs: [
         { id: 'dashboard', label: '仪表盘', icon: '◉' },
         { id: 'containers', label: '容器', icon: '▣' },
@@ -305,6 +302,24 @@ export default {
     async fetchSysInfo() {
       try { const r = await axios.get('/api/v1/system/info'); if (r.data.code === 0) this.sysInfo = r.data.data
       } catch (e) { /* ignore */ }
+    },
+    async toggleCompose(group) {
+      group._expanded = !group._expanded
+      if (group._expanded && group._content === undefined && group.configFiles) {
+        try {
+          const r = await axios.get('/api/v1/compose/file', { params: { path: group.configFiles } })
+          group._content = r.data.code === 0 ? r.data.data : '加载失败'
+        } catch (e) { group._content = '加载失败' }
+      }
+    },
+    editCompose(group) { group._editing = true; group._editContent = group._content },
+    cancelCompose(group) { group._editing = false },
+    async saveCompose(group) {
+      try {
+        await axios.put('/api/v1/compose/file', { path: group.configFiles, content: group._editContent })
+        group._content = group._editContent
+        group._editing = false
+      } catch (e) { alert('保存失败: ' + (e.response?.data?.message || e.message)) }
     },
     async removeImage(id) {
       this.imageRemoving = id
@@ -514,6 +529,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .btn-remove-sm:disabled { opacity: 0.3; }
 .btn-compose { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.75rem; color: var(--muted); flex-shrink: 0; }
 .btn-compose:hover { background: var(--hover); color: var(--primary); }
+.compose-arrow { display: inline-block; transition: transform 0.15s; font-size: 0.7rem; color: var(--muted); }
+.compose-arrow.expanded { transform: rotate(90deg); }
+.compose-inline { margin: 0 0 0.5rem 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: var(--card-bg); }
+.compose-inline-header { display: flex; justify-content: space-between; align-items: center; padding: 0.5rem 0.75rem; background: var(--hover); border-bottom: 1px solid var(--border); }
+.compose-inline-title { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.compose-inline-actions { display: flex; gap: 0.35rem; }
+.compose-loading { text-align: center; padding: 1rem; color: var(--muted); font-size: 0.8rem; }
+.compose-editor { width: 100%; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82rem; background: var(--log-bg); color: var(--log-text); border: none; padding: 0.75rem; resize: vertical; outline: none; line-height: 1.5; }
+.compose-viewer { margin: 0; padding: 0.75rem; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-word; background: var(--log-bg); color: var(--log-text); }
 .compose-editor-actions { display: flex; gap: 0.5rem; }
 .compose-editor { width: 100%; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; background: var(--log-bg); color: var(--log-text); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; resize: vertical; outline: none; line-height: 1.5; }
 .compose-editor:focus { border-color: var(--primary); }
