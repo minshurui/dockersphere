@@ -54,7 +54,6 @@ export default {
   mounted() {
     this.fetchContainers()
     this.connectWebSocket()
-    setInterval(() => this.fetchContainers(), 5000)
   },
   beforeUnmount() {
     if (this.ws) this.ws.close()
