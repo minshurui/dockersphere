@@ -1,5 +1,6 @@
 <template>
-  <div :class="['app', darkMode ? 'dark' : '']">
+  <div :class="['app', darkMode ? 'dark' : '']" @click="ripple">
+    <div v-for="r in ripples" :key="r.id" class="ripple" :style="{ left: r.x + 'px', top: r.y + 'px' }"></div>
     <!-- Sidebar -->
     <aside class="sidebar">
       <div class="logo">
@@ -270,6 +271,7 @@ export default {
       sysInfo: null, imageRemoving: null,
       composeExpanded: {}, composeEditingKey: '', composeEditContent: '', composeEditPath: '',
       showDeploy: false, deployProject: '', deployContent: '', deployOutput: '', deploying: false, deploySuccess: false,
+      ripples: [], rippleId: 0,
       tabs: [
         { id: 'dashboard', label: '仪表盘', icon: '&#9675;' },
         { id: 'containers', label: '容器', icon: '&#9635;' },
@@ -342,6 +344,11 @@ export default {
     async projectAction(project, action) { try { const r = await axios.post(`/api/v1/compose/project/${project}/${action}`, {}); if (r.data.code === 0 && r.data.data.success) setTimeout(() => this.fetchContainers(), 2000) } catch (e) { console.error(e) } },
     async deployStack() { if (!this.deployProject.trim() || !this.deployContent.trim()) { alert('请输入项目名称和内容'); return }; this.deploying = true; this.deployOutput = ''; this.deploySuccess = false; try { const r = await axios.post('/api/v1/compose/deploy', { project: this.deployProject, content: this.deployContent }); if (r.data.code === 0) { this.deployOutput = r.data.data.output; this.deploySuccess = r.data.data.success; if (this.deploySuccess) { this.fetchContainers(); this.deployProject = ''; this.deployContent = '' } } } catch (e) { this.deployOutput = '请求失败'; this.deploySuccess = false }; this.deploying = false },
     formatBytes(b) { if (!b) return '0B'; const u = ['B','KB','MB','GB','TB']; const i = Math.floor(Math.log(b)/Math.log(1024)); return (b/Math.pow(1024,i)).toFixed(1) + u[i] },
+    ripple(e) {
+      const id = ++this.rippleId
+      this.ripples.push({ id, x: e.clientX, y: e.clientY })
+      setTimeout(() => { this.ripples = this.ripples.filter(r => r.id !== id) }, 800)
+    },
     toggleDark() { this.darkMode = !this.darkMode; localStorage.setItem('dockersphere-dark', this.darkMode) },
     connectWebSocket() {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'; this.ws = new WebSocket(`${proto}//${window.location.host}/ws`)
@@ -376,20 +383,22 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe 
 }
 .dark { /* same as default - already dark mecha theme */ }
 
-/* Grid background overlay */
+/* Background image */
 body::before {
-  content: ''; position: fixed; inset: 0; z-index: -1;
-  background-image:
-    linear-gradient(rgba(0,245,255,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,245,255,0.03) 1px, transparent 1px);
-  background-size: 40px 40px;
+  content: ''; position: fixed; inset: 0; z-index: -2;
+  background-image: url('/bg-city.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  opacity: 0.15;
   pointer-events: none;
 }
 body::after {
   content: ''; position: fixed; inset: 0; z-index: -1;
-  background: radial-gradient(ellipse at 20% 50%, rgba(0,245,255,0.06) 0%, transparent 50%),
-              radial-gradient(ellipse at 80% 20%, rgba(255,0,170,0.04) 0%, transparent 50%),
-              radial-gradient(ellipse at 50% 80%, rgba(255,215,0,0.03) 0%, transparent 50%);
+  background:
+    linear-gradient(180deg, rgba(10,14,23,0.85) 0%, rgba(10,14,23,0.6) 50%, rgba(10,14,23,0.85) 100%),
+    radial-gradient(ellipse at 20% 50%, rgba(0,245,255,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 20%, rgba(255,0,170,0.05) 0%, transparent 50%);
   pointer-events: none;
 }
 
@@ -622,6 +631,17 @@ body::after {
 .image-name { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .image-size { font-size: 0.78rem; color: var(--text2); white-space: nowrap; }
 .image-id { font-size: 0.75rem; color: var(--text2); font-family: monospace; }
+.ripple {
+  position: fixed; pointer-events: none; z-index: 9999;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: rgba(0,245,255,0.4);
+  transform: translate(-50%, -50%) scale(0);
+  animation: rippleAnim 0.8s ease-out forwards;
+  box-shadow: 0 0 6px rgba(0,245,255,0.3);
+}
+@keyframes rippleAnim {
+  to { transform: translate(-50%, -50%) scale(60); opacity: 0; }
+}
 .btn-icon-sm { width: 24px; height: 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity var(--transition); }
 .btn-icon-sm:hover { opacity: 1; }
 .btn-icon-sm.btn-start { background: #f0fdf4; color: #16a34a; }

@@ -85,6 +85,8 @@ func SetupRouter(
 
 	// Serve built frontend SPA
 	r.Static("/assets", "../frontend/dist/assets")
+	r.StaticFile("/bg-grid.jpg", "../frontend/dist/bg-grid.jpg")
+	r.StaticFile("/bg-dark.jpg", "../frontend/dist/bg-dark.jpg")
 	r.NoRoute(func(c *gin.Context) {
 		http.ServeFile(c.Writer, c.Request, "../frontend/dist/index.html")
 	})
