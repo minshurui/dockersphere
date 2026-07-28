@@ -386,7 +386,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe 
 /* Background image */
 body::before {
   content: ''; position: fixed; inset: 0; z-index: -2;
-  background-image: url('/bg-city.jpg');
+  background-image: url('/bg-grid.jpg');
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
