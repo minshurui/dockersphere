@@ -48,52 +48,88 @@
       </header>
 
       <main class="content">
-        <!-- Dashboard -->
+        <!-- Dashboard: 黄金非对称布局 -->
         <div v-if="activeTab === 'dashboard'" class="fade-in">
-          <div class="stats-grid">
-            <div class="stat-card stat-total">
-              <div class="stat-icon">📦</div>
-              <div class="stat-info"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">总容器</div></div>
-            </div>
-            <div class="stat-card stat-running">
-              <div class="stat-icon">▶</div>
-              <div class="stat-info"><div class="stat-value">{{ stats.running }}</div><div class="stat-label">运行中</div></div>
-            </div>
-            <div class="stat-card stat-stopped">
-              <div class="stat-icon">⏸</div>
-              <div class="stat-info"><div class="stat-value">{{ stats.stopped }}</div><div class="stat-label">已停止</div></div>
-            </div>
-            <div class="stat-card stat-projects">
-              <div class="stat-icon">▦</div>
-              <div class="stat-info"><div class="stat-value">{{ stats.projects }}</div><div class="stat-label">项目</div></div>
-            </div>
-          </div>
-
-          <div class="card-section">
-            <div class="card-section-header">
-              <h3>系统信息</h3>
-            </div>
-            <div v-if="sysInfo" class="sys-grid">
-              <div class="sys-item" v-for="s in sysItems" :key="s.label">
-                <span class="sys-label">{{ s.label }}</span>
-                <span class="sys-value">{{ s.value }}</span>
+          <div class="dash-container">
+            <!-- 首屏: 黄金两栏 458:742 -->
+            <section class="hero-section">
+              <div class="hero-text">
+                <h1 class="hero-title">DockerSphere</h1>
+                <p class="hero-desc">容器管理面板 · {{ containers.length }} 个容器 · {{ stats.projects }} 个 Compose 项目</p>
+                <button class="hero-btn" @click="activeTab='containers'">管理容器 →</button>
               </div>
-            </div>
-          </div>
-
-          <div class="card-section">
-            <div class="card-section-header">
-              <h3>实时事件</h3>
-              <span class="header-badge">{{ events.length }}</span>
-            </div>
-            <div class="event-timeline">
-              <div v-for="(e, i) in events.slice(0, 8)" :key="i" class="event-item">
-                <span :class="['event-marker', e.type.split('.')[0]]"></span>
-                <span class="event-text">{{ e.summary || e.type }}</span>
-                <span class="event-time">{{ formatTime(e.timestamp) }}</span>
+              <div class="hero-stats">
+                <div class="hero-stat-card" @click="goContainers('running')">
+                  <div class="hero-stat-value">{{ stats.running }}</div>
+                  <div class="hero-stat-label">运行中</div>
+                </div>
+                <div class="hero-stat-card" @click="goContainers('exited')">
+                  <div class="hero-stat-value">{{ stats.stopped }}</div>
+                  <div class="hero-stat-label">已停止</div>
+                </div>
+                <div class="hero-stat-card" @click="activeTab='containers'">
+                  <div class="hero-stat-value">{{ stats.projects }}</div>
+                  <div class="hero-stat-label">项目</div>
+                </div>
+                <div class="hero-stat-card hero-stat-accent">
+                  <div class="hero-stat-value">{{ stats.images }}</div>
+                  <div class="hero-stat-label">镜像</div>
+                </div>
               </div>
-              <div v-if="events.length === 0" class="empty-state">暂无事件</div>
-            </div>
+            </section>
+            <!-- 间距 80px -->
+
+            <!-- 第二板块: 均等3栏 (制造构图反差) -->
+            <section class="features-section">
+              <div class="feature-card">
+                <div class="feature-icon">◈</div>
+                <h3 class="feature-title">容器管理</h3>
+                <p class="feature-desc">查看、启动、停止、重启容器，实时日志与命令执行</p>
+              </div>
+              <div class="feature-card">
+                <div class="feature-icon">▦</div>
+                <h3 class="feature-title">Compose 编排</h3>
+                <p class="feature-desc">查看编辑 docker-compose.yml，部署新项目，一键启停</p>
+              </div>
+              <div class="feature-card">
+                <div class="feature-icon">◻</div>
+                <h3 class="feature-title">镜像管理</h3>
+                <p class="feature-desc">浏览本地镜像，查看大小，清理无用镜像</p>
+              </div>
+            </section>
+            <!-- 间距 80px -->
+
+            <!-- 第三板块: 黄金比例两栏 (事件+系统信息) -->
+            <section class="cases-section">
+              <div class="cases-main">
+                <h2 class="section-label">实时事件</h2>
+                <div class="events-list">
+                  <div v-for="(e, i) in events.slice(0, 6)" :key="i" class="event-line">
+                    <span :class="['event-marker-sm', e.type.split('.')[0]]"></span>
+                    <span class="event-text-sm">{{ e.summary || e.type }}</span>
+                    <span class="event-time-sm">{{ formatTime(e.timestamp) }}</span>
+                  </div>
+                  <div v-if="events.length === 0" class="empty-sm">暂无事件</div>
+                </div>
+              </div>
+              <div class="cases-side">
+                <h2 class="section-label">系统信息</h2>
+                <div v-if="sysInfo" class="sys-list">
+                  <div class="sys-row" v-for="s in sysItems" :key="s.label">
+                    <span class="sys-key">{{ s.label }}</span>
+                    <span class="sys-val">{{ s.value }}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <!-- 间距 80px -->
+
+            <!-- 底部: 居中布局 -->
+            <footer class="dash-footer">
+              <span class="footer-version">Docker v{{ sysInfo?.ServerVersion || '...' }}</span>
+              <span class="footer-divider">·</span>
+              <span class="footer-status" :class="connected ? 'on' : 'off'">{{ connected ? '已连接' : '已断开' }}</span>
+            </footer>
           </div>
         </div>
 
@@ -349,6 +385,10 @@ export default {
       this.ripples.push({ id, x: e.clientX, y: e.clientY })
       setTimeout(() => { this.ripples = this.ripples.filter(r => r.id !== id) }, 800)
     },
+    goContainers(filter) {
+      this.searchQuery = filter || ''
+      this.activeTab = 'containers'
+    },
     toggleDark() { this.darkMode = !this.darkMode; localStorage.setItem('dockersphere-dark', this.darkMode) },
     connectWebSocket() {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'; this.ws = new WebSocket(`${proto}//${window.location.host}/ws`)
@@ -506,33 +546,140 @@ body::after {
 }
 .icon-btn:hover { background: var(--bg); color: var(--text); box-shadow: var(--shadow-inset); }
 
-.content { padding: 1.5rem; flex: 1; }
+.content { padding: 2rem 2.5rem; flex: 1; }
 .fade-in { animation: fadeIn 0.25s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-/* Stats */
-.stats-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px;
-  margin-bottom: 64px;
+/* Dashboard - 黄金非对称布局 */
+.dash-container {
+  max-width: 1200px; margin: 0 auto;
 }
-.stat-card {
-  background: var(--card); border-radius: var(--radius); padding: 1.5rem;
-  display: flex; align-items: center; gap: 1rem;
-  box-shadow: var(--shadow-floating); border: 1px solid var(--border);
+
+/* 首屏: 黄金两栏 458:742 */
+.hero-section {
+  display: flex; gap: 0; margin-bottom: 80px;
+  align-items: center;
+}
+.hero-text {
+  width: 458px; flex-shrink: 0;
+}
+.hero-title {
+  font-size: 2.8rem; font-weight: 700; line-height: 1.1;
+  letter-spacing: -1px; color: var(--text);
+  margin-bottom: 16px;
+}
+.hero-desc {
+  font-size: 1rem; line-height: 1.55;
+  color: var(--text2); margin-bottom: 24px;
+  max-width: 380px;
+}
+.hero-btn {
+  background: var(--primary); color: #fff;
+  border: none; padding: 0.7rem 1.6rem;
+  border-radius: var(--radius-xs);
+  font-size: 0.95rem; font-weight: 500; cursor: pointer;
   transition: all var(--transition);
 }
-.stat-card:hover { transform: translateY(-2px); box-shadow: 0px 12px 32px rgba(0,0,0,0.1); }
-.stat-icon {
-  width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;
-  border-radius: var(--radius-sm); font-size: 1.2rem;
-  background: var(--bg);
+.hero-btn:hover { box-shadow: 0px 4px 16px rgba(31,70,124,0.3); transform: translateY(-1px); }
+.hero-stats {
+  flex: 1; margin-left: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding-left: 32px;
 }
-.stat-total .stat-icon { color: var(--primary); }
-.stat-running .stat-icon { color: var(--success); }
-.stat-stopped .stat-icon { color: var(--danger); }
-.stat-projects .stat-icon { color: var(--accent); }
-.stat-value { font-size: 1.75rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.5px; }
-.stat-label { font-size: 0.82rem; color: var(--text2); margin-top: 0.15rem; }
+.hero-stat-card {
+  background: var(--card); border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow-floating);
+  border: 1px solid var(--border);
+  cursor: pointer; transition: all var(--transition);
+}
+.hero-stat-card:hover { transform: translateY(-2px); box-shadow: 0px 12px 32px rgba(0,0,0,0.1); }
+.hero-stat-value {
+  font-size: 2.2rem; font-weight: 700;
+  line-height: 1; letter-spacing: -1px;
+  color: var(--primary);
+}
+.hero-stat-accent .hero-stat-value { color: var(--accent); }
+.hero-stat-label {
+  font-size: 0.85rem; color: var(--text2);
+  margin-top: 4px;
+}
+
+/* 第二板块: 均等3栏 */
+.features-section {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px; margin-bottom: 80px;
+}
+.feature-card {
+  background: var(--card); border-radius: var(--radius-lg);
+  padding: 2rem 1.75rem;
+  box-shadow: var(--shadow-floating);
+  border: 1px solid var(--border);
+  transition: all var(--transition);
+}
+.feature-card:hover { transform: translateY(-3px); box-shadow: 0px 16px 40px rgba(0,0,0,0.1); }
+.feature-icon {
+  font-size: 1.6rem; color: var(--primary);
+  margin-bottom: 16px;
+}
+.feature-title {
+  font-size: 1.2rem; font-weight: 600;
+  margin-bottom: 8px; color: var(--text);
+}
+.feature-desc {
+  font-size: 0.9rem; line-height: 1.55;
+  color: var(--text2);
+}
+
+/* 第三板块: 黄金比例两栏 */
+.cases-section {
+  display: flex; gap: 32px;
+  margin-bottom: 80px;
+}
+.cases-main {
+  flex: 1.618; /* 黄金比例 */
+}
+.cases-side {
+  flex: 1;
+}
+.section-label {
+  font-size: 1rem; font-weight: 600;
+  color: var(--text2); text-transform: uppercase;
+  letter-spacing: 1px; margin-bottom: 20px;
+}
+.events-list { display: flex; flex-direction: column; }
+.event-line {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+.event-line:last-child { border-bottom: none; }
+.event-marker-sm {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.event-marker-sm.container { background: var(--success); }
+.event-marker-sm.task { background: var(--primary); }
+.event-text-sm { flex: 1; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-time-sm { font-size: 0.8rem; color: var(--text2); flex-shrink: 0; }
+.sys-list { display: flex; flex-direction: column; gap: 12px; }
+.sys-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+.sys-row:last-child { border-bottom: none; }
+.sys-key { color: var(--text2); }
+.sys-val { font-weight: 500; color: var(--text); }
+
+/* 底部居中 */
+.dash-footer {
+  text-align: center; padding: 32px 0 16px;
+  font-size: 0.82rem; color: var(--text2);
+  border-top: 1px solid var(--border);
+}
+.footer-divider { margin: 0 8px; }
+.footer-status.on { color: var(--success); }
+.footer-status.off { color: var(--danger); }
+.empty-sm { text-align: center; padding: 1rem; color: var(--text2); font-size: 0.85rem; }
 
 /* Card sections */
 .card-section {
