@@ -1,9 +1,12 @@
 package docker
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -94,6 +97,64 @@ func (s *containerService) Stats(ctx context.Context, id string) (*model.Contain
 		return nil, fmt.Errorf("decode stats: %w", err)
 	}
 	return v, nil
+}
+
+func (s *containerService) Logs(ctx context.Context, id string, tail int) ([]string, error) {
+	if tail <= 0 || tail > 500 {
+		tail = 100
+	}
+	opts := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       strconv.Itoa(tail),
+	}
+	reader, err := s.cli.ContainerLogs(ctx, id, opts)
+	if err != nil {
+		return nil, fmt.Errorf("container logs: %w", err)
+	}
+	defer reader.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(reader)
+	for scanner.Scan() {
+		line := scanner.Text()
+		// Strip Docker log header (8 bytes)
+		if len(line) > 8 {
+			line = line[8:]
+		}
+		lines = append(lines, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan logs: %w", err)
+	}
+	return lines, nil
+}
+
+func (s *containerService) Exec(ctx context.Context, id string, cmd []string) (string, error) {
+	if len(cmd) == 0 {
+		cmd = []string{"sh", "-c", "echo hello"}
+	}
+	execCfg := types.ExecConfig{
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+	}
+	execID, err := s.cli.ContainerExecCreate(ctx, id, execCfg)
+	if err != nil {
+		return "", fmt.Errorf("exec create: %w", err)
+	}
+
+	resp, err := s.cli.ContainerExecAttach(ctx, execID.ID, types.ExecStartCheck{})
+	if err != nil {
+		return "", fmt.Errorf("exec attach: %w", err)
+	}
+	defer resp.Close()
+
+	output, err := io.ReadAll(resp.Reader)
+	if err != nil {
+		return "", fmt.Errorf("exec read: %w", err)
+	}
+	return string(output), nil
 }
 
 func (s *containerService) Start(ctx context.Context, id string) error {

@@ -137,6 +137,22 @@
                 <button @click="action(selectedContainer.id, 'remove')" class="btn btn-remove">✕ 删除</button>
               </div>
             </div>
+            <div class="detail-card detail-card-wide">
+              <div class="detail-card-title">日志 <button v-if="showLogs" @click="showLogs=false" class="btn-sm">收起</button></div>
+              <div v-if="showLogs" class="log-viewer" ref="logViewer">
+                <div v-for="(line, i) in logs" :key="i" class="log-line">{{ line }}</div>
+                <div v-if="logs.length === 0" class="empty-state-sm">无日志</div>
+              </div>
+              <button v-if="!showLogs" @click="fetchLogs" class="btn btn-log">📋 查看日志</button>
+            </div>
+            <div class="detail-card detail-card-wide">
+              <div class="detail-card-title">命令执行</div>
+              <div class="exec-bar">
+                <input v-model="execCmd" @keyup.enter="runExec" placeholder="输入命令，例如: ps aux" class="exec-input" />
+                <button @click="runExec" class="btn btn-exec">运行</button>
+              </div>
+              <div v-if="execOutput" class="exec-output"><pre>{{ execOutput }}</pre></div>
+            </div>
           </div>
         </div>
 
@@ -172,6 +188,10 @@ export default {
       loading: false,
       connected: false,
       ws: null,
+      showLogs: false,
+      logs: [],
+      execCmd: '',
+      execOutput: '',
       tabs: [
         { id: 'dashboard', label: '仪表盘', icon: '◉' },
         { id: 'containers', label: '容器', icon: '▣', badge: null },
@@ -236,6 +256,27 @@ export default {
     openDetail(c) {
       this.selectedContainer = c
       this.activeTab = 'detail'
+      this.showLogs = false
+      this.logs = []
+      this.execOutput = ''
+    },
+    async fetchLogs() {
+      this.showLogs = true
+      try {
+        const res = await axios.get(`/api/v1/containers/${this.selectedContainer.id}/logs?tail=50`)
+        if (res.data.code === 0) this.logs = res.data.data || []
+      } catch (err) { this.logs = ['获取日志失败'] }
+    },
+    async runExec() {
+      if (!this.execCmd.trim()) return
+      this.execOutput = '执行中...'
+      try {
+        const parts = this.execCmd.trim().split(/\s+/)
+        const res = await axios.post(`/api/v1/containers/${this.selectedContainer.id}/exec`, { cmd: parts[0], args: parts.slice(1) })
+        if (res.data.code === 0) {
+          this.execOutput = res.data.data.replace(/[\x00-\x08\x0e-\x1f]/g, '').trim()
+        }
+      } catch (err) { this.execOutput = '执行失败: ' + (err.response?.data?.message || err.message) }
     },
     mappedPorts(ports) {
       const seen = new Set()
@@ -369,6 +410,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helv
 .btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 500; }
 .btn:hover { opacity: 0.85; }
 .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-log { background: #f3e5f5; color: #7b1fa2; }
+.btn-exec { background: #e8eaf6; color: #283593; }
+.btn-sm { background: none; border: 1px solid #ddd; border-radius: 4px; padding: 0.15rem 0.5rem; cursor: pointer; font-size: 0.75rem; color: #888; float: right; }
+.log-viewer { background: #1a1a2e; color: #e0e0e0; border-radius: 6px; padding: 0.75rem; max-height: 300px; overflow-y: auto; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; line-height: 1.4; }
+.log-line { white-space: pre-wrap; word-break: break-all; }
+.exec-bar { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+.exec-input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid #ddd; border-radius: 6px; font-size: 0.85rem; font-family: 'SF Mono', 'Fira Code', monospace; outline: none; }
+.exec-input:focus { border-color: #6c63ff; }
+.exec-output { background: #1a1a2e; color: #e0e0e0; border-radius: 6px; padding: 0.75rem; max-height: 200px; overflow-y: auto; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem; }
+.exec-output pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
 .btn-start { background: #e8f5e9; color: #2e7d32; }
 .btn-stop { background: #fbe9e7; color: #c62828; }
 .btn-restart { background: #e3f2fd; color: #1565c0; }

@@ -54,6 +54,8 @@ func SetupRouter(
 
 		v1.GET("/containers", containerHandler.List)
 		v1.GET("/containers/:id/stats", containerHandler.Stats)
+		v1.GET("/containers/:id/logs", containerHandler.Logs)
+		v1.POST("/containers/:id/exec", containerHandler.Exec)
 		v1.POST("/containers/:id/action", containerHandler.Action)
 
 		v1.GET("/tasks", taskHandler.List)

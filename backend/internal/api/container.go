@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -53,6 +54,46 @@ func (h *ContainerHandler) Stats(c *gin.Context) {
 		return
 	}
 	model.OK(c, stats)
+}
+
+// Logs returns container logs.
+func (h *ContainerHandler) Logs(c *gin.Context) {
+	id := c.Param("id")
+	tail := 100
+	if t := c.Query("tail"); t != "" {
+		if n, err := strconv.Atoi(t); err == nil && n > 0 {
+			tail = n
+		}
+	}
+	logs, err := h.service.Logs(c.Request.Context(), id, tail)
+	if err != nil {
+		model.NotFound(c, "container not found: "+id)
+		return
+	}
+	model.OK(c, logs)
+}
+
+type execRequest struct {
+	Cmd  string   `json:"cmd"`
+	Args []string `json:"args"`
+}
+
+// Exec runs a command in a container.
+func (h *ContainerHandler) Exec(c *gin.Context) {
+	id := c.Param("id")
+	var req execRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		model.BadRequest(c, "invalid request")
+		return
+	}
+	cmd := []string{req.Cmd}
+	cmd = append(cmd, req.Args...)
+	output, err := h.service.Exec(c.Request.Context(), id, cmd)
+	if err != nil {
+		model.InternalError(c, err.Error())
+		return
+	}
+	model.OK(c, output)
 }
 
 // Action performs an async action on a container.
