@@ -5,8 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yourname/dockersphere/internal/audit"
-	"github.com/yourname/dockersphere/internal/model"
+	"github.com/minshurui/dockersphere/internal/audit"
+	"github.com/minshurui/dockersphere/internal/model"
 )
 
 // AuditHandler handles audit log requests.

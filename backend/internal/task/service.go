@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/yourname/dockersphere/internal/event"
+	"github.com/minshurui/dockersphere/internal/event"
 )
 
 // Service manages task creation and execution.

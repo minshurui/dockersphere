@@ -4,8 +4,8 @@ import (
 	"flag"
 	"log"
 
-	"github.com/yourname/dockersphere/internal/app"
-	"github.com/yourname/dockersphere/internal/config"
+	"github.com/minshurui/dockersphere/internal/app"
+	"github.com/minshurui/dockersphere/internal/config"
 )
 
 func main() {

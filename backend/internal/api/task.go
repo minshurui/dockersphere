@@ -3,8 +3,8 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/yourname/dockersphere/internal/model"
-	"github.com/yourname/dockersphere/internal/task"
+	"github.com/minshurui/dockersphere/internal/model"
+	"github.com/minshurui/dockersphere/internal/task"
 )
 
 // TaskHandler handles task-related HTTP requests.

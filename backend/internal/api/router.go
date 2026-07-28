@@ -3,11 +3,11 @@ package api
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/yourname/dockersphere/internal/audit"
-	"github.com/yourname/dockersphere/internal/docker"
-	"github.com/yourname/dockersphere/internal/middleware"
-	"github.com/yourname/dockersphere/internal/task"
-	"github.com/yourname/dockersphere/internal/ws"
+	"github.com/minshurui/dockersphere/internal/audit"
+	"github.com/minshurui/dockersphere/internal/docker"
+	"github.com/minshurui/dockersphere/internal/middleware"
+	"github.com/minshurui/dockersphere/internal/task"
+	"github.com/minshurui/dockersphere/internal/ws"
 )
 
 // SetupRouter configures all API routes.

@@ -8,13 +8,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/yourname/dockersphere/internal/audit"
-	"github.com/yourname/dockersphere/internal/api"
-	"github.com/yourname/dockersphere/internal/config"
-	"github.com/yourname/dockersphere/internal/docker"
-	"github.com/yourname/dockersphere/internal/event"
-	"github.com/yourname/dockersphere/internal/task"
-	"github.com/yourname/dockersphere/internal/ws"
+	"github.com/minshurui/dockersphere/internal/audit"
+	"github.com/minshurui/dockersphere/internal/api"
+	"github.com/minshurui/dockersphere/internal/config"
+	"github.com/minshurui/dockersphere/internal/docker"
+	"github.com/minshurui/dockersphere/internal/event"
+	"github.com/minshurui/dockersphere/internal/task"
+	"github.com/minshurui/dockersphere/internal/ws"
 )
 
 // App holds all application dependencies and lifecycle.

@@ -3,13 +3,14 @@ package docker
 import (
 	"context"
 	"log"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/events"
 	"github.com/docker/docker/api/types/filters"
 	dockerclient "github.com/docker/docker/client"
 
-	"github.com/yourname/dockersphere/internal/event"
+	"github.com/minshurui/dockersphere/internal/event"
 )
 
 // EventListener watches Docker daemon events and publishes them to the EventBus.
@@ -28,22 +29,38 @@ func (l *EventListener) Start(ctx context.Context) {
 	f := filters.NewArgs()
 	f.Add("type", "container")
 
-	eventCh, errCh := l.cli.Events(ctx, types.EventsOptions{Filters: f})
-
 	for {
+		eventCh, errCh := l.cli.Events(ctx, types.EventsOptions{Filters: f})
+
+	inner:
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("[EventListener] stopped")
+				return
+			case e, ok := <-eventCh:
+				if !ok {
+					break inner
+				}
+				l.handleEvent(e)
+			case err, ok := <-errCh:
+				if !ok {
+					break inner
+				}
+				if ctx.Err() != nil {
+					return
+				}
+				log.Printf("[EventListener] error: %v, reconnecting...", err)
+				break inner
+			}
+		}
+
 		select {
 		case <-ctx.Done():
 			log.Println("[EventListener] stopped")
 			return
-		case e := <-eventCh:
-			l.handleEvent(e)
-		case err := <-errCh:
-			if ctx.Err() != nil {
-				return
-			}
-			log.Printf("[EventListener] error: %v, restarting...", err)
-			// Reconnect on error
-			eventCh, errCh = l.cli.Events(ctx, types.EventsOptions{Filters: f})
+		default:
+			time.Sleep(3 * time.Second)
 		}
 	}
 }

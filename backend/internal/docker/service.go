@@ -3,7 +3,7 @@ package docker
 import (
 	"context"
 
-	"github.com/yourname/dockersphere/internal/model"
+	"github.com/minshurui/dockersphere/internal/model"
 )
 
 // ContainerService defines the interface for container operations.

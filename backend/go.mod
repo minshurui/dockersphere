@@ -1,4 +1,4 @@
-module github.com/yourname/dockersphere
+module github.com/minshurui/dockersphere
 
 go 1.25.0
 

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/yourname/dockersphere/internal/event"
+	"github.com/minshurui/dockersphere/internal/event"
 )
 
 func TestMemoryRepo_SaveAndFind(t *testing.T) {

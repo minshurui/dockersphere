@@ -5,10 +5,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/yourname/dockersphere/internal/audit"
-	"github.com/yourname/dockersphere/internal/docker"
-	"github.com/yourname/dockersphere/internal/model"
-	"github.com/yourname/dockersphere/internal/task"
+	"github.com/minshurui/dockersphere/internal/audit"
+	"github.com/minshurui/dockersphere/internal/docker"
+	"github.com/minshurui/dockersphere/internal/model"
+	"github.com/minshurui/dockersphere/internal/task"
 )
 
 // ContainerHandler handles container-related HTTP requests.
@@ -74,17 +74,18 @@ func (h *ContainerHandler) Action(c *gin.Context) {
 	model.Accepted(c, gin.H{"task_id": taskID})
 }
 
-func (h *ContainerHandler) buildJob(ctx context.Context, action, id string) task.Job {
+func (h *ContainerHandler) buildJob(_ context.Context, action, id string) task.Job {
+	bg := context.Background()
 	return func() error {
 		switch action {
 		case "start":
-			return h.service.Start(ctx, id)
+			return h.service.Start(bg, id)
 		case "stop":
-			return h.service.Stop(ctx, id)
+			return h.service.Stop(bg, id)
 		case "restart":
-			return h.service.Restart(ctx, id)
+			return h.service.Restart(bg, id)
 		case "remove":
-			return h.service.Remove(ctx, id)
+			return h.service.Remove(bg, id)
 		default:
 			return nil
 		}
