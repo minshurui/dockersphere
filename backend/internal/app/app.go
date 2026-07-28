@@ -28,6 +28,8 @@ type App struct {
 	hub          *ws.Hub
 	auditStore   *audit.Store
 	listener     *docker.EventListener
+	imageSvc     docker.ImageService
+	systemSvc    docker.SystemService
 }
 
 // New creates and initializes a new App.
@@ -46,6 +48,9 @@ func New(cfg *config.Config) (*App, error) {
 	}
 	app.containerSvc = docker.NewContainerService(cli)
 	app.healthCheck = docker.NewHealthChecker(cli)
+
+	app.imageSvc = docker.NewImageService(cli)
+	app.systemSvc = docker.NewSystemService(cli)
 
 	// Event bus
 	app.bus = event.NewBus()
@@ -113,6 +118,8 @@ func (a *App) Run() error {
 		a.pool,
 		a.hub,
 		a.auditStore,
+		a.imageSvc,
+		a.systemSvc,
 	)
 
 	// Start HTTP server

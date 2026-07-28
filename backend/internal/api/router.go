@@ -20,6 +20,8 @@ func SetupRouter(
 	pool *task.WorkerPool,
 	hub *ws.Hub,
 	auditStore *audit.Store,
+	imageSvc docker.ImageService,
+	systemSvc docker.SystemService,
 ) *gin.Engine {
 	gin.SetMode(mode)
 	r := gin.New()
@@ -66,6 +68,13 @@ func SetupRouter(
 			v1.GET("/audit", auditHandler.List)
 		}
 	}
+
+	// System & Images
+	systemHandler := NewSystemHandler(imageSvc, systemSvc)
+	v1.GET("/images", systemHandler.Images)
+	v1.DELETE("/images/:id", systemHandler.ImageRemove)
+	v1.GET("/system/info", systemHandler.Info)
+	v1.GET("/system/df", systemHandler.DiskUsage)
 
 	// Serve built frontend SPA
 	r.Static("/assets", "../frontend/dist/assets")
