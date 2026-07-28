@@ -38,24 +38,11 @@
         <!-- Dashboard -->
         <div v-if="activeTab === 'dashboard'" class="tab-content">
           <div class="stats-grid">
-            <div class="stat-card">
-              <div class="stat-value">{{ stats.total }}</div>
-              <div class="stat-label">全部容器</div>
-            </div>
-            <div class="stat-card running">
-              <div class="stat-value">{{ stats.running }}</div>
-              <div class="stat-label">运行中</div>
-            </div>
-            <div class="stat-card stopped">
-              <div class="stat-value">{{ stats.stopped }}</div>
-              <div class="stat-label">已停止</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-value">{{ stats.images }}</div>
-              <div class="stat-label">镜像数</div>
-            </div>
+            <div class="stat-card"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">全部容器</div></div>
+            <div class="stat-card running"><div class="stat-value">{{ stats.running }}</div><div class="stat-label">运行中</div></div>
+            <div class="stat-card stopped"><div class="stat-value">{{ stats.stopped }}</div><div class="stat-label">已停止</div></div>
+            <div class="stat-card"><div class="stat-value">{{ stats.projects }}</div><div class="stat-label">Compose 项目</div></div>
           </div>
-
           <div class="section">
             <h3 class="section-title">最近事件</h3>
             <div class="mini-events">
@@ -73,13 +60,39 @@
         <div v-if="activeTab === 'containers'" class="tab-content">
           <div v-if="loading" class="loading">加载中...</div>
           <div v-else-if="containers.length === 0" class="empty-state">未找到容器</div>
-          <div v-else class="container-grid">
-            <ContainerCard
-              v-for="c in containers" :key="c.id"
-              :container="c"
-              @action="action"
-              @click="selectedContainer = c"
-            />
+          <div v-else class="container-groups">
+            <div v-for="group in composeGroups" :key="group.project" class="compose-group">
+              <div class="compose-header">
+                <span class="compose-icon">▦</span>
+                <span class="compose-name">{{ group.project }}</span>
+                <span class="compose-count">{{ group.containers.length }} 服务</span>
+                <span class="compose-file" :title="group.configFiles">{{ group.configFiles ? group.configFiles.split('/').pop() : '' }}</span>
+              </div>
+              <div class="compose-containers">
+                <ContainerCard
+                  v-for="c in group.containers" :key="c.id"
+                  :container="c"
+                  @action="action"
+                  @click="openDetail(c)"
+                />
+              </div>
+            </div>
+            <!-- 非 Compose 容器 -->
+            <div v-if="standaloneContainers.length > 0" class="compose-group">
+              <div class="compose-header">
+                <span class="compose-icon">◯</span>
+                <span class="compose-name">独立容器</span>
+                <span class="compose-count">{{ standaloneContainers.length }}</span>
+              </div>
+              <div class="compose-containers">
+                <ContainerCard
+                  v-for="c in standaloneContainers" :key="c.id"
+                  :container="c"
+                  @action="action"
+                  @click="openDetail(c)"
+                />
+              </div>
+            </div>
           </div>
         </div>
 
@@ -87,7 +100,10 @@
         <div v-if="activeTab === 'detail' && selectedContainer" class="tab-content">
           <button class="btn-back" @click="activeTab = 'containers'">← 返回列表</button>
           <div class="detail-header">
-            <h2>{{ selectedContainer.name }}</h2>
+            <div class="detail-title-group">
+              <span v-if="selectedContainer.composeProject" class="compose-tag">{{ selectedContainer.composeProject }}/{{ selectedContainer.composeService }}</span>
+              <h2>{{ selectedContainer.name }}</h2>
+            </div>
             <span :class="['badge-lg', selectedContainer.state]">{{ selectedContainer.state }}</span>
           </div>
           <div class="detail-grid">
@@ -101,9 +117,13 @@
             <div class="detail-card">
               <div class="detail-card-title">端口映射</div>
               <div v-if="selectedContainer.ports && selectedContainer.ports.length > 0">
-                <div v-for="p in selectedContainer.ports" :key="p.private_port" class="detail-row">
-                  <span class="dl">{{ p.type }}</span>
-                  <span class="dd">{{ p.public_port || '?' }} → {{ p.private_port }}</span>
+                <div v-for="p in mappedPorts(selectedContainer.ports)" :key="p.key" class="detail-row port-row">
+                  <span class="port-type">{{ p.type }}</span>
+                  <span class="port-mapping">
+                    <span class="port-binding">{{ p.binding }}</span>
+                    <span class="port-arrow">→</span>
+                    <span class="port-private">{{ p.private }}</span>
+                  </span>
                 </div>
               </div>
               <div v-else class="empty-state-sm">无端口映射</div>
@@ -154,30 +174,52 @@ export default {
       ws: null,
       tabs: [
         { id: 'dashboard', label: '仪表盘', icon: '◉' },
-        { id: 'containers', label: '容器', icon: '▣' },
+        { id: 'containers', label: '容器', icon: '▣', badge: null },
         { id: 'events', label: '事件', icon: '⚡' },
       ]
     }
   },
   computed: {
-    currentTab() {
-      return this.tabs.find(t => t.id === this.activeTab) || this.tabs[0]
-    },
+    currentTab() { return this.tabs.find(t => t.id === this.activeTab) || this.tabs[0] },
     stats() {
       const total = this.containers.length
       const running = this.containers.filter(c => c.state === 'running').length
       const stopped = this.containers.filter(c => c.state !== 'running').length
-      const images = new Set(this.containers.map(c => c.image)).size
-      return { total, running, stopped, images }
+      const projects = new Set(this.containers.map(c => c.labels?.['com.docker.compose.project'] || '_')).size
+      return { total, running, stopped, projects }
+    },
+    composeGroups() {
+      const groups = {}
+      for (const c of this.containers) {
+        const project = c.labels?.['com.docker.compose.project']
+        if (project) {
+          if (!groups[project]) {
+            groups[project] = {
+              project,
+              configFiles: c.labels?.['com.docker.compose.project.config_files'] || '',
+              containers: []
+            }
+          }
+          groups[project].containers.push({
+            ...c,
+            composeProject: project,
+            composeService: c.labels?.['com.docker.compose.service'] || ''
+          })
+        }
+      }
+      return Object.values(groups).sort((a, b) => a.project.localeCompare(b.project))
+    },
+    standaloneContainers() {
+      return this.containers
+        .filter(c => !c.labels?.['com.docker.compose.project'])
+        .map(c => ({ ...c, composeProject: null, composeService: null }))
     }
   },
   mounted() {
     this.fetchContainers()
     this.connectWebSocket()
   },
-  beforeUnmount() {
-    if (this.ws) this.ws.close()
-  },
+  beforeUnmount() { if (this.ws) this.ws.close() },
   methods: {
     async fetchContainers() {
       try {
@@ -188,9 +230,26 @@ export default {
       } finally { this.loading = false }
     },
     async action(id, act) {
-      try {
-        await axios.post(`/api/v1/containers/${id}/action`, { action: act })
+      try { await axios.post(`/api/v1/containers/${id}/action`, { action: act })
       } catch (err) { console.error(err) }
+    },
+    openDetail(c) {
+      this.selectedContainer = c
+      this.activeTab = 'detail'
+    },
+    mappedPorts(ports) {
+      const seen = new Set()
+      return ports.filter(p => {
+        const key = `${p.private_port}-${p.type}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      }).map(p => ({
+        key: `${p.private_port}-${p.type}`,
+        type: p.type.toUpperCase(),
+        binding: p.public_port ? `${p.ip || '0.0.0.0'}:${p.public_port}` : '未映射',
+        private: `${p.private_port}`
+      }))
     },
     connectWebSocket() {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -221,112 +280,110 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helv
 
 /* Sidebar */
 .sidebar {
-  width: 220px; background: #1a1a2e; color: #e0e0e0;
+  width: 200px; background: #1a1a2e; color: #e0e0e0;
   display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0; z-index: 100;
 }
-.logo { padding: 1.5rem 1.25rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
-.logo-icon { font-size: 1.5rem; color: #6c63ff; }
-.logo-text { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.5px; }
-.nav { flex: 1; padding: 0.75rem 0; }
-.nav-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1.25rem; cursor: pointer; color: #a0a0b8; transition: all 0.15s; font-size: 0.9rem; }
+.logo { padding: 1.25rem 1.25rem; display: flex; align-items: center; gap: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.logo-icon { font-size: 1.3rem; color: #6c63ff; }
+.logo-text { font-size: 1.15rem; font-weight: 700; }
+.nav { flex: 1; padding: 0.5rem 0; }
+.nav-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.65rem 1.25rem; cursor: pointer; color: #a0a0b8; transition: all 0.15s; font-size: 0.85rem; }
 .nav-item:hover { background: rgba(108,99,255,0.08); color: #e0e0e0; }
 .nav-item.active { background: rgba(108,99,255,0.15); color: #fff; border-right: 3px solid #6c63ff; }
-.nav-icon { font-size: 1.1rem; width: 24px; text-align: center; }
-.nav-badge { margin-left: auto; background: #6c63ff; color: #fff; font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 10px; }
-.sidebar-footer { padding: 1rem 1.25rem; border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.8rem; }
+.nav-icon { font-size: 1rem; width: 20px; text-align: center; }
+.sidebar-footer { padding: 0.75rem 1.25rem; border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.75rem; }
 .connection-status { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
 .dot { width: 8px; height: 8px; border-radius: 50%; }
 .dot.online { background: #4caf50; box-shadow: 0 0 6px rgba(76,175,80,0.5); }
 .dot.offline { background: #f44336; }
-.version { color: #666; }
+.version { color: #555; }
 
-/* Main area */
-.main-area { margin-left: 220px; flex: 1; display: flex; flex-direction: column; }
-.topbar {
-  background: #fff; padding: 1rem 2rem; display: flex; justify-content: space-between; align-items: center;
-  border-bottom: 1px solid #e8e8e8; position: sticky; top: 0; z-index: 50;
-}
-.page-title { font-size: 1.25rem; font-weight: 600; }
+/* Main */
+.main-area { margin-left: 200px; flex: 1; display: flex; flex-direction: column; }
+.topbar { background: #fff; padding: 0.75rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e8e8e8; position: sticky; top: 0; z-index: 50; }
+.page-title { font-size: 1.15rem; font-weight: 600; }
 .topbar-actions { display: flex; align-items: center; gap: 1rem; }
 .container-count { color: #888; font-size: 0.85rem; }
-.btn-refresh { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 0.4rem 0.6rem; cursor: pointer; font-size: 1.1rem; color: #666; transition: all 0.15s; }
-.btn-refresh:hover { background: #f5f5f5; color: #333; }
-
-/* Content */
-.content { padding: 1.5rem 2rem; flex: 1; }
+.btn-refresh { background: none; border: 1px solid #ddd; border-radius: 6px; padding: 0.35rem 0.5rem; cursor: pointer; font-size: 1rem; color: #666; }
+.btn-refresh:hover { background: #f5f5f5; }
+.content { padding: 1.25rem 1.5rem; flex: 1; }
 
 /* Stats */
-.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
-.stat-card {
-  background: #fff; border-radius: 12px; padding: 1.5rem; text-align: center;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: transform 0.15s;
-}
-.stat-card:hover { transform: translateY(-2px); }
-.stat-value { font-size: 2rem; font-weight: 700; color: #1a1a2e; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem; margin-bottom: 1.5rem; }
+.stat-card { background: #fff; border-radius: 10px; padding: 1.25rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.stat-value { font-size: 1.75rem; font-weight: 700; color: #1a1a2e; }
 .stat-card.running .stat-value { color: #4caf50; }
 .stat-card.stopped .stat-value { color: #f44336; }
-.stat-label { color: #888; font-size: 0.85rem; margin-top: 0.25rem; }
+.stat-label { color: #888; font-size: 0.8rem; margin-top: 0.2rem; }
 
 /* Sections */
-.section { background: #fff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); margin-bottom: 1.5rem; }
-.section-title { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; color: #333; }
+.section { background: #fff; border-radius: 10px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.section-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.75rem; color: #333; }
 
 /* Mini events */
-.mini-events { display: flex; flex-direction: column; gap: 0.5rem; }
-.mini-event { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid #f5f5f5; font-size: 0.85rem; }
+.mini-events { display: flex; flex-direction: column; gap: 0.35rem; }
+.mini-event { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; border-bottom: 1px solid #f5f5f5; font-size: 0.8rem; }
 .mini-event:last-child { border-bottom: none; }
-.event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.event-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .event-dot.container { background: #4caf50; }
 .event-dot.task { background: #2196f3; }
-.event-dot.audit { background: #ff9800; }
-.event-text { flex: 1; color: #555; }
-.event-time { color: #aaa; font-size: 0.8rem; }
+.event-text { flex: 1; color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-time { color: #aaa; font-size: 0.75rem; }
 
-/* Container grid */
-.container-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1rem; }
+/* Compose groups */
+.compose-group { margin-bottom: 1.25rem; }
+.compose-header {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;
+  background: #fff; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.compose-icon { font-size: 0.9rem; color: #6c63ff; }
+.compose-name { font-weight: 600; font-size: 0.9rem; color: #333; }
+.compose-count { margin-left: auto; font-size: 0.78rem; color: #999; }
+.compose-file { font-size: 0.75rem; color: #bbb; font-family: monospace; }
+.compose-containers { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.6rem; }
 
 /* Detail */
-.btn-back { background: none; border: none; color: #6c63ff; cursor: pointer; font-size: 0.9rem; padding: 0; margin-bottom: 1rem; }
-.detail-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
-.detail-header h2 { font-size: 1.5rem; font-weight: 600; }
-.badge-lg { padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; }
+.btn-back { background: none; border: none; color: #6c63ff; cursor: pointer; font-size: 0.85rem; padding: 0; margin-bottom: 0.75rem; }
+.detail-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.detail-title-group h2 { font-size: 1.35rem; font-weight: 600; }
+.compose-tag { font-size: 0.75rem; color: #6c63ff; background: #e8e5ff; padding: 0.1rem 0.5rem; border-radius: 4px; display: inline-block; margin-bottom: 0.2rem; }
+.badge-lg { padding: 0.2rem 0.75rem; border-radius: 10px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
 .badge-lg.running { background: #e8f5e9; color: #2e7d32; }
-.badge-lg.exited, .badge-lg.stopped { background: #fbe9e7; color: #c62828; }
-.badge-lg.created { background: #e3f2fd; color: #1565c0; }
-.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.detail-card {
-  background: #fff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
-}
+.badge-lg.exited { background: #fbe9e7; color: #c62828; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.detail-card { background: #fff; border-radius: 10px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 .detail-card-wide { grid-column: 1 / -1; }
-.detail-card-title { font-weight: 600; font-size: 0.9rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1rem; }
-.detail-row { display: flex; padding: 0.4rem 0; font-size: 0.9rem; border-bottom: 1px solid #f5f5f5; }
+.detail-card-title { font-weight: 600; font-size: 0.8rem; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 0.75rem; }
+.detail-row { display: flex; padding: 0.35rem 0; font-size: 0.85rem; border-bottom: 1px solid #f5f5f5; }
 .detail-row:last-child { border-bottom: none; }
-.dl { width: 60px; color: #888; flex-shrink: 0; }
+.dl { width: 50px; color: #888; flex-shrink: 0; }
 .dd { color: #333; }
-.mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; }
-.detail-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
-
-/* Buttons */
-.btn { padding: 0.6rem 1.2rem; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.15s; }
-.btn:hover { transform: translateY(-1px); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8rem; }
+.port-row { display: flex; align-items: center; gap: 0.5rem; }
+.port-type { font-size: 0.7rem; color: #999; background: #f5f5f5; padding: 0.1rem 0.4rem; border-radius: 3px; font-weight: 600; width: 36px; text-align: center; flex-shrink: 0; }
+.port-mapping { display: flex; align-items: center; gap: 0.4rem; flex: 1; }
+.port-binding { color: #6c63ff; font-family: monospace; font-size: 0.85rem; }
+.port-arrow { color: #ccc; font-size: 0.8rem; }
+.port-private { color: #333; font-family: monospace; }
+.detail-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.btn { padding: 0.5rem 1rem; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 500; }
+.btn:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .btn-start { background: #e8f5e9; color: #2e7d32; }
 .btn-stop { background: #fbe9e7; color: #c62828; }
 .btn-restart { background: #e3f2fd; color: #1565c0; }
 .btn-remove { background: #fce4ec; color: #ad1457; }
 
-/* Events panel */
-.events-panel { background: #fff; border-radius: 12px; padding: 1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
-.event-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.5rem; border-bottom: 1px solid #f5f5f5; font-size: 0.85rem; }
+/* Events */
+.events-panel { background: #fff; border-radius: 10px; padding: 0.75rem; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.event-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border-bottom: 1px solid #f5f5f5; font-size: 0.82rem; }
 .event-row:last-child { border-bottom: none; }
-.event-badge { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; flex-shrink: 0; }
+.event-badge { padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; flex-shrink: 0; }
 .event-badge.container { background: #e8f5e9; color: #2e7d32; }
 .event-badge.task { background: #e3f2fd; color: #1565c0; }
-.event-badge.audit { background: #fff3e0; color: #e65100; }
-.event-msg { flex: 1; color: #555; }
-.event-ts { color: #aaa; font-size: 0.8rem; flex-shrink: 0; }
+.event-msg { flex: 1; color: #555; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-ts { color: #aaa; font-size: 0.75rem; flex-shrink: 0; }
 
-/* Shared */
-.loading, .empty-state { text-align: center; padding: 3rem; color: #999; font-size: 0.9rem; }
-.empty-state-sm { text-align: center; padding: 1rem; color: #999; font-size: 0.85rem; }
+.loading, .empty-state { text-align: center; padding: 2rem; color: #999; font-size: 0.85rem; }
+.empty-state-sm { text-align: center; padding: 0.75rem; color: #999; font-size: 0.8rem; }
 </style>
