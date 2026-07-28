@@ -71,9 +71,15 @@ func (h *ComposeHandler) ProjectAction(c *gin.Context) {
 	}
 	var composePath string
 	for _, dir := range dirs {
-		candidates, _ := filepath.Glob(filepath.Join(dir, "docker-compose*.yml"))
-		if len(candidates) > 0 {
-			composePath = candidates[0]
+		// Prefer the main docker-compose.yml over variant files
+		for _, name := range []string{"docker-compose.yml", "compose.yml", "docker-compose.yaml"} {
+			candidate := filepath.Join(dir, name)
+			if _, err := os.Stat(candidate); err == nil {
+				composePath = candidate
+				break
+			}
+		}
+		if composePath != "" {
 			break
 		}
 	}
@@ -100,6 +106,8 @@ func (h *ComposeHandler) ProjectAction(c *gin.Context) {
 	}
 
 	cmd := exec.Command("docker", args...)
+	// Run from the compose file's directory to pick up .env files
+	cmd.Dir = filepath.Dir(composePath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -130,6 +138,7 @@ func (h *ComposeHandler) Deploy(c *gin.Context) {
 	}
 
 	cmd := exec.Command("docker", "compose", "-p", req.Project, "-f", composePath, "up", "-d")
+	cmd.Dir = filepath.Dir(composePath)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

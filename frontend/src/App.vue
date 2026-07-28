@@ -166,10 +166,12 @@
             <div class="detail-card">
               <div class="detail-card-title">标签 ({{ Object.keys(selectedContainer.labels || {}).length }})</div>
               <div class="label-list">
-                <div v-for="(v, k) in selectedContainer.labels || {}" :key="k" class="label-item" v-if="!k.startsWith('com.docker.compose')">
-                  <span class="label-key">{{ k }}</span>
-                  <span class="label-val">{{ v }}</span>
-                </div>
+                <template v-for="(v, k) in selectedContainer.labels || {}" :key="k">
+                  <div v-if="!k.startsWith('com.docker.compose')" class="label-item">
+                    <span class="label-key">{{ k }}</span>
+                    <span class="label-val">{{ v }}</span>
+                  </div>
+                </template>
                 <div v-if="!selectedContainer.labels || Object.keys(selectedContainer.labels).length === 0" class="empty-state-sm">无标签</div>
               </div>
             </div>
