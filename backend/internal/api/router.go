@@ -69,6 +69,12 @@ func SetupRouter(
 		}
 	}
 
+	// Compose files
+	composeHandler := NewComposeHandler()
+	v1.GET("/compose/files", composeHandler.List)
+	v1.GET("/compose/file", composeHandler.Read)
+	v1.PUT("/compose/file", composeHandler.Update)
+
 	// System & Images
 	systemHandler := NewSystemHandler(imageSvc, systemSvc)
 	v1.GET("/images", systemHandler.Images)

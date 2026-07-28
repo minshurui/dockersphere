@@ -80,6 +80,7 @@
                 <span class="compose-name">{{ group.project }}</span>
                 <span class="compose-count">{{ group.containers.length }} 服务</span>
                 <span class="compose-file">{{ group.configFiles ? group.configFiles.split('/').pop() : '' }}</span>
+                <button v-if="group.configFiles" @click.stop="openCompose(group.configFiles)" class="btn-compose">📄 编辑</button>
               </div>
               <div class="compose-containers">
                 <ContainerCard v-for="c in group.containers" :key="c.id" :container="c" @action="action" @click="openDetail(c)" />
@@ -183,6 +184,26 @@
           </div>
         </div>
 
+        <!-- Compose Editor -->
+        <div v-if="activeTab === 'compose'" class="tab-content">
+          <button class="btn-back" @click="activeTab = 'containers'">← 返回</button>
+          <div class="section">
+            <div class="section-title-row">
+              <h3 class="section-title">{{ composeFilePath.split('/').pop() || 'docker-compose.yml' }}</h3>
+              <div class="compose-editor-actions">
+                <button @click="composeEditing = !composeEditing" class="btn" :class="composeEditing ? 'btn-stop' : 'btn-start'">
+                  {{ composeEditing ? '取消编辑' : '编辑' }}
+                </button>
+                <button v-if="composeEditing" @click="saveCompose" :disabled="composeSaving" class="btn btn-exec">
+                  {{ composeSaving ? '保存中...' : '💾 保存' }}
+                </button>
+              </div>
+            </div>
+            <textarea v-if="composeEditing" v-model="composeFile" class="compose-editor" rows="30"></textarea>
+            <pre v-else class="compose-viewer">{{ composeFile || '加载中...' }}</pre>
+          </div>
+        </div>
+
         <!-- Events -->
         <div v-if="activeTab === 'events'" class="tab-content">
           <div class="section">
@@ -219,6 +240,7 @@ export default {
       ws: null, darkMode: dark, searchQuery: '',
       showLogs: false, logs: [], execCmd: '', execOutput: '',
       sysInfo: null, imageRemoving: null,
+      composeFile: '', composeFilePath: '', composeEditing: false, composeSaving: false,
       tabs: [
         { id: 'dashboard', label: '仪表盘', icon: '◉' },
         { id: 'containers', label: '容器', icon: '▣' },
@@ -328,6 +350,23 @@ export default {
       return (b/Math.pow(1024,i)).toFixed(1) + u[i]
     },
     toggleDark() { this.darkMode = !this.darkMode; localStorage.setItem('dockersphere-dark', this.darkMode) },
+    async openCompose(path) {
+      this.composeFilePath = path
+      this.composeEditing = false
+      this.activeTab = 'compose'
+      try {
+        const r = await axios.get('/api/v1/compose/file', { params: { path } })
+        if (r.data.code === 0) this.composeFile = r.data.data
+      } catch (e) { this.composeFile = '加载失败: ' + (e.response?.data?.message || e.message) }
+    },
+    async saveCompose() {
+      this.composeSaving = true
+      try {
+        await axios.put('/api/v1/compose/file', { path: this.composeFilePath, content: this.composeFile })
+        this.composeEditing = false
+      } catch (e) { alert('保存失败: ' + (e.response?.data?.message || e.message)) }
+      this.composeSaving = false
+    },
     connectWebSocket() {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       this.ws = new WebSocket(`${proto}//${window.location.host}/ws`)
@@ -473,6 +512,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .btn-sm { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 0.15rem 0.5rem; cursor: pointer; font-size: 0.75rem; color: var(--muted); float: right; }
 .btn-remove-sm { background: none; border: none; color: #f44336; cursor: pointer; font-size: 0.9rem; padding: 0.25rem; flex-shrink: 0; }
 .btn-remove-sm:disabled { opacity: 0.3; }
+.btn-compose { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.75rem; color: var(--muted); flex-shrink: 0; }
+.btn-compose:hover { background: var(--hover); color: var(--primary); }
+.compose-editor-actions { display: flex; gap: 0.5rem; }
+.compose-editor { width: 100%; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.85rem; background: var(--log-bg); color: var(--log-text); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem; resize: vertical; outline: none; line-height: 1.5; }
+.compose-editor:focus { border-color: var(--primary); }
+.compose-viewer { background: var(--log-bg); color: var(--log-text); border-radius: 6px; padding: 0.75rem; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.82rem; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
 
 /* Images */
 .image-grid { display: flex; flex-direction: column; gap: 0.35rem; }
