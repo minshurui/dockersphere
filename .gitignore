@@ -1,0 +1,43 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+dockersphere
+
+# Test binary
+*.test
+
+# Output
+*.out
+
+# Dependency directories
+node_modules/
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files
+data/
+*.db
+
+# Logs
+*.log
+
+# Build output
+dist/
+build/
+
+# Environment
+.env
+.env.local

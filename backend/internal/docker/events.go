@@ -1,0 +1,94 @@
+package docker
+
+import (
+	"context"
+	"log"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/events"
+	"github.com/docker/docker/api/types/filters"
+	dockerclient "github.com/docker/docker/client"
+
+	"github.com/yourname/dockersphere/internal/event"
+)
+
+// EventListener watches Docker daemon events and publishes them to the EventBus.
+type EventListener struct {
+	cli *dockerclient.Client
+	bus *event.Bus
+}
+
+// NewEventListener creates a new EventListener.
+func NewEventListener(cli *dockerclient.Client, bus *event.Bus) *EventListener {
+	return &EventListener{cli: cli, bus: bus}
+}
+
+// Start begins listening for Docker events. It blocks until ctx is cancelled.
+func (l *EventListener) Start(ctx context.Context) {
+	f := filters.NewArgs()
+	f.Add("type", "container")
+
+	eventCh, errCh := l.cli.Events(ctx, types.EventsOptions{Filters: f})
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("[EventListener] stopped")
+			return
+		case e := <-eventCh:
+			l.handleEvent(e)
+		case err := <-errCh:
+			if ctx.Err() != nil {
+				return
+			}
+			log.Printf("[EventListener] error: %v, restarting...", err)
+			// Reconnect on error
+			eventCh, errCh = l.cli.Events(ctx, types.EventsOptions{Filters: f})
+		}
+	}
+}
+
+func (l *EventListener) handleEvent(e events.Message) {
+	containerID := e.Actor.ID
+	if len(containerID) > 12 {
+		containerID = containerID[:12]
+	}
+
+	var eventType string
+	switch e.Action {
+	case "start":
+		eventType = event.ContainerStarted
+	case "stop":
+		eventType = event.ContainerStopped
+	case "die":
+		eventType = event.ContainerStopped
+	case "restart":
+		eventType = event.ContainerRestarted
+	case "create":
+		eventType = event.ContainerCreated
+	case "destroy":
+		eventType = event.ContainerDestroyed
+	case "pause":
+		eventType = event.ContainerPaused
+	case "unpause":
+		eventType = event.ContainerUnpaused
+	default:
+		// Skip unhandled actions
+		return
+	}
+
+	name := ""
+	if n, ok := e.Actor.Attributes["name"]; ok {
+		name = n
+	}
+
+	data := map[string]interface{}{
+		"container_id": containerID,
+		"name":         name,
+		"image":        e.Actor.Attributes["image"],
+		"action":       string(e.Action),
+	}
+
+	l.bus.Publish(eventType, data)
+	log.Printf("[EventListener] %s: container=%s name=%s", eventType, containerID, name)
+}

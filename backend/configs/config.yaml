@@ -1,0 +1,18 @@
+server:
+  port: 8080
+  mode: debug    # release / debug
+
+docker:
+  host: unix:///var/run/docker.sock
+
+app:
+  name: DockerSphere
+  version: 0.3.0
+
+task:
+  worker_pool_size: 4
+  repository: memory   # memory / sqlite
+
+audit:
+  enabled: true
+  db_path: data/audit.db
