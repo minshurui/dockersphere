@@ -54,6 +54,63 @@ type deployRequest struct {
 	Content string `json:"content" binding:"required"`
 }
 
+type projectActionRequest struct {
+	Project string `form:"project"`
+	Action  string `json:"action"`
+}
+
+func (h *ComposeHandler) ProjectAction(c *gin.Context) {
+	project := c.Param("project")
+	action := c.Param("action")
+
+	// Find compose file from the project's deployed dir or common locations
+	dirs := []string{
+		filepath.Join(h.deployDir, project),
+		"/root/" + project,
+		"/mnt/c/Users/Administrator/" + project,
+	}
+	var composePath string
+	for _, dir := range dirs {
+		candidates, _ := filepath.Glob(filepath.Join(dir, "docker-compose*.yml"))
+		if len(candidates) > 0 {
+			composePath = candidates[0]
+			break
+		}
+	}
+	if composePath == "" {
+		model.NotFound(c, "compose file not found for project: "+project)
+		return
+	}
+
+	args := []string{"compose", "-p", project, "-f", composePath}
+	switch action {
+	case "up":
+		args = append(args, "up", "-d")
+	case "down":
+		args = append(args, "down")
+	case "restart":
+		args = append(args, "restart")
+	case "stop":
+		args = append(args, "stop")
+	case "start":
+		args = append(args, "start")
+	default:
+		model.BadRequest(c, "invalid action: "+action)
+		return
+	}
+
+	cmd := exec.Command("docker", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		model.OK(c, gin.H{"success": false, "output": stdout.String() + stderr.String(), "error": err.Error()})
+		return
+	}
+	model.OK(c, gin.H{"success": true, "output": stdout.String() + stderr.String()})
+}
+
 func (h *ComposeHandler) Deploy(c *gin.Context) {
 	var req deployRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

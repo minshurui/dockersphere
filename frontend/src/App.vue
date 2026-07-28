@@ -105,7 +105,12 @@
                 <span class="compose-name">{{ group.project }}</span>
                 <span class="compose-count">{{ group.containers.length }} 服务</span>
                 <span class="compose-file">{{ group.configFiles ? group.configFiles.split('/').pop() : '' }}</span>
-                <button v-if="group.configFiles && composeExpanded[group.project] && group._content" @click.stop="editCompose(group)" class="btn-compose">编辑</button>
+                <div class="compose-actions" @click.stop>
+                  <button @click="projectAction(group.project, 'start')" class="act-compose act-start" title="启动全部">▶</button>
+                  <button @click="projectAction(group.project, 'stop')" class="act-compose act-stop" title="停止全部">■</button>
+                  <button @click="projectAction(group.project, 'restart')" class="act-compose act-restart" title="重启全部">↻</button>
+                  <button v-if="group.configFiles && composeExpanded[group.project] && group._content" @click.stop="editCompose(group)" class="btn-compose">编辑</button>
+                </div>
               </div>
               <div v-if="composeExpanded[group.project] && group._content !== undefined" class="compose-inline">
                 <div class="compose-inline-header">
@@ -113,7 +118,7 @@
                   <div class="compose-inline-actions">
                     <button v-if="composeEditingKey !== group.project" @click.stop="editCompose(group)" class="btn btn-log" style="padding:0.2rem 0.5rem;font-size:0.75rem">编辑</button>
                     <template v-if="composeEditingKey === group.project">
-                      <button @click.stop="saveCompose(group)" class="btn btn-exec" style="padding:0.2rem 0.5rem;font-size:0.75rem">保存</button>
+                      <button @click.stop="saveCompose()" class="btn btn-exec" style="padding:0.2rem 0.5rem;font-size:0.75rem">保存</button>
                       <button @click.stop="cancelCompose()" class="btn btn-stop" style="padding:0.2rem 0.5rem;font-size:0.75rem">取消</button>
                     </template>
                   </div>
@@ -155,6 +160,18 @@
               <div class="detail-row"><span class="dl">镜像</span><span class="dd">{{ selectedContainer.image }}</span></div>
               <div class="detail-row"><span class="dl">状态</span><span class="dd">{{ selectedContainer.status }}</span></div>
               <div class="detail-row"><span class="dl">创建</span><span class="dd">{{ selectedContainer.created }}</span></div>
+              <div class="detail-row"><span class="dl">重启</span><span class="dd">{{ selectedContainer.labels?.['com.docker.compose.restart'] || (selectedContainer.status?.includes('unhealthy') ? '异常' : '默认') }}</span></div>
+              <div class="detail-row"><span class="dl">项目</span><span class="dd">{{ selectedContainer.labels?.['com.docker.compose.project'] || '-' }}/{{ selectedContainer.labels?.['com.docker.compose.service'] || '-' }}</span></div>
+            </div>
+            <div class="detail-card">
+              <div class="detail-card-title">标签 ({{ Object.keys(selectedContainer.labels || {}).length }})</div>
+              <div class="label-list">
+                <div v-for="(v, k) in selectedContainer.labels || {}" :key="k" class="label-item" v-if="!k.startsWith('com.docker.compose')">
+                  <span class="label-key">{{ k }}</span>
+                  <span class="label-val">{{ v }}</span>
+                </div>
+                <div v-if="!selectedContainer.labels || Object.keys(selectedContainer.labels).length === 0" class="empty-state-sm">无标签</div>
+              </div>
             </div>
             <div class="detail-card">
               <div class="detail-card-title">端口映射</div>
@@ -261,7 +278,7 @@ export default {
       showLogs: false, logs: [], execCmd: '', execOutput: '',
       sysInfo: null, imageRemoving: null,
       composeFile: '', composeFilePath: '', composeEditing: false, composeSaving: false,
-      composeEditingKey: '', composeEditContent: '',
+      composeEditingKey: '', composeEditContent: '', composeEditPath: '',
       showDeploy: false, deployProject: '', deployContent: '', deployOutput: '', deploying: false, deploySuccess: false,
       composeExpanded: {},
       tabs: [
@@ -339,17 +356,32 @@ export default {
       }
     },
     editCompose(group) {
-      const key = group.project
-      this.composeEditingKey = key
+      this.composeEditingKey = group.project
       this.composeEditContent = group._content
+      this.composeEditPath = group.configFiles
     },
     cancelCompose() { this.composeEditingKey = '' },
-    async saveCompose(group) {
+    async saveCompose() {
+      if (!this.composeEditPath) { alert('错误：没有文件路径'); return }
       try {
-        await axios.put('/api/v1/compose/file', { path: group.configFiles, content: this.composeEditContent })
-        group._content = this.composeEditContent
+        const r = await axios.put('/api/v1/compose/file', { path: this.composeEditPath, content: this.composeEditContent })
+        if (r.data.code !== 0) { alert('保存失败: ' + (r.data.message || '未知错误')); return }
+        // 更新所有匹配项目的 _content
+        for (const g of this.filteredGroups) {
+          if (g.project === this.composeEditingKey) g._content = this.composeEditContent
+        }
         this.composeEditingKey = ''
       } catch (e) { alert('保存失败: ' + (e.response?.data?.message || e.message)) }
+    },
+    async projectAction(project, action) {
+      try {
+        const r = await axios.post(`/api/v1/compose/project/${project}/${action}`, {})
+        if (r.data.code === 0 && r.data.data.success) {
+          setTimeout(() => this.fetchContainers(), 2000)
+        } else {
+          console.warn(r.data.data?.output || '操作完成')
+        }
+      } catch (e) { console.error(e) }
     },
     async deployStack() {
       if (!this.deployProject.trim() || !this.deployContent.trim()) { alert('请输入项目名称和内容'); return }
@@ -519,7 +551,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 
 /* Compose groups */
 .compose-group { margin-bottom: 1.25rem; }
-.compose-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 2px var(--shadow); }
+.compose-header { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; background: var(--card-bg); border-radius: 8px; box-shadow: 0 1px 2px var(--shadow); cursor: pointer; transition: background 0.15s; }
+.compose-header:hover { background: var(--hover); }
 .compose-icon { font-size: 0.9rem; color: var(--primary); }
 .compose-name { font-weight: 600; font-size: 0.9rem; }
 .compose-count { margin-left: auto; font-size: 0.78rem; color: var(--muted); }
@@ -571,10 +604,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .btn-log { background: #f3e5f5; color: #7b1fa2; }
 .btn-exec { background: #e8eaf6; color: #283593; }
 .btn-sm { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 0.15rem 0.5rem; cursor: pointer; font-size: 0.75rem; color: var(--muted); float: right; }
+.label-list { max-height: 200px; overflow-y: auto; font-size: 0.78rem; }
+.label-item { display: flex; gap: 0.5rem; padding: 0.2rem 0; border-bottom: 1px solid var(--border); }
+.label-key { color: var(--primary); font-family: monospace; font-size: 0.75rem; min-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+.label-val { color: var(--muted); font-family: monospace; overflow: hidden; text-overflow: ellipsis; }
 .btn-remove-sm { background: none; border: none; color: #f44336; cursor: pointer; font-size: 0.9rem; padding: 0.25rem; flex-shrink: 0; }
 .btn-remove-sm:disabled { opacity: 0.3; }
 .btn-compose { background: none; border: 1px solid var(--border); border-radius: 4px; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.75rem; color: var(--muted); flex-shrink: 0; }
 .btn-compose:hover { background: var(--hover); color: var(--primary); }
+.compose-actions { display: flex; align-items: center; gap: 0.2rem; flex-shrink: 0; }
+.act-compose { width: 24px; height: 24px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; opacity: 0.7; transition: opacity 0.15s; }
+.act-compose:hover { opacity: 1; }
+.act-compose.act-start { background: #e8f5e9; color: #2e7d32; }
+.act-compose.act-stop { background: #fbe9e7; color: #c62828; }
+.act-compose.act-restart { background: #e3f2fd; color: #1565c0; }
 .compose-arrow { display: inline-block; transition: transform 0.15s; font-size: 0.7rem; color: var(--muted); }
 .compose-arrow.expanded { transform: rotate(90deg); }
 .compose-inline { margin: 0 0 0.5rem 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: var(--card-bg); }

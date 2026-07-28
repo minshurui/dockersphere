@@ -74,6 +74,7 @@ func SetupRouter(
 	v1.GET("/compose/file", composeHandler.Read)
 	v1.PUT("/compose/file", composeHandler.Update)
 	v1.POST("/compose/deploy", composeHandler.Deploy)
+	v1.POST("/compose/project/:project/:action", composeHandler.ProjectAction)
 
 	// System & Images
 	systemHandler := NewSystemHandler(imageSvc, systemSvc)
